@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# ============================================================
+# transkribiere – Lokales Whisper-Transkriptionsskript
+# Verwendung: transkribiere datei1.mp3 [datei2.mp4 ...]
+# ============================================================
+
+# Strenge Fehlerbehandlung: Skript bricht bei Fehler ab
+set -euo pipefail
+
+# ---- Konfiguration ----------------------------------------
+MODELL="$HOME/whisper-models/ggml-large-v3.bin"
+AUSGABE_DIR="$HOME/Transkripte"
+SPRACHE="de"
+TMP_DIR="/tmp/whisper_tmp_$$"   # $$ = aktuelle Prozess-ID, verhindert Konflikte
+
+# Whisper-Befehl ermitteln (brew installiert manchmal als "whisper-cpp")
+if command -v whisper-cpp &>/dev/null; then
+    WHISPER_BIN="whisper-cpp"
+elif command -v whisper &>/dev/null; then
+    WHISPER_BIN="whisper"
+else
+    echo "FEHLER: whisper-cpp nicht gefunden."
+    echo "Bitte install.sh erneut ausführen oder 'brew install whisper-cpp' eingeben."
+    exit 1
+fi
+
+# ---- Vorprüfungen -----------------------------------------
+if [ ! -f "$MODELL" ]; then
+    echo "FEHLER: Whisper-Modell nicht gefunden: $MODELL"
+    echo "Bitte install.sh ausführen, um das Modell herunterzuladen."
+    exit 1
+fi
+
+if ! command -v ffmpeg &>/dev/null; then
+    echo "FEHLER: ffmpeg nicht gefunden."
+    echo "Bitte 'brew install ffmpeg' ausführen."
+    exit 1
+fi
+
+if [ $# -eq 0 ]; then
+    echo "Verwendung: transkribiere <datei1> [datei2] [datei3] ..."
+    echo "Unterstützte Formate: MP3, WAV, M4A, MP4, MOV, QTA, AIFF, OGG, FLAC u.a."
+    exit 1
+fi
+
+# Ausgabe-Verzeichnis anlegen, falls nicht vorhanden
+mkdir -p "$AUSGABE_DIR"
+mkdir -p "$TMP_DIR"
+
+# Temporäre Dateien beim Beenden aufräumen
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+# ---- Hilfsfunktionen --------------------------------------
+
+# Gibt Dateiendung in Kleinbuchstaben zurück
+datei_endung() {
+    echo "${1##*.}" | tr '[:upper:]' '[:lower:]'
+}
+
+# Konvertiert Sekunden in lesbares Format (z.B. 3661 → 1h 01m 01s)
+sekunden_formatieren() {
+    local sek=$1
+    local h=$((sek / 3600))
+    local m=$(( (sek % 3600) / 60 ))
+    local s=$((sek % 60))
+    if [ "$h" -gt 0 ]; then
+        printf "%dh %02dm %02ds" "$h" "$m" "$s"
+    elif [ "$m" -gt 0 ]; then
+        printf "%dm %02ds" "$m" "$s"
+    else
+        printf "%ds" "$s"
+    fi
+}
+
+# ---- Hauptverarbeitung ------------------------------------
+GESAMT_START=$(date +%s)
+GESAMT_DATEIEN=$#
+VERARBEITET=0
+FEHLER=0
+
+echo "======================================"
+echo "  Whisper Transkription (large-v3)"
+echo "  Sprache: Deutsch | Offline"
+echo "======================================"
+
+for EINGABE_DATEI in "$@"; do
+
+    echo ""
+    echo "--------------------------------------"
+
+    # Prüfen ob Datei existiert
+    if [ ! -f "$EINGABE_DATEI" ]; then
+        echo "FEHLER: Datei nicht gefunden: $EINGABE_DATEI"
+        FEHLER=$((FEHLER + 1))
+        continue
+    fi
+
+    # Dateiname ohne Pfad und ohne Endung ermitteln
+    DATEINAME=$(basename "$EINGABE_DATEI")
+    BASISNAME="${DATEINAME%.*}"
+    ENDUNG=$(datei_endung "$EINGABE_DATEI")
+
+    echo "Datei:  $DATEINAME"
+    echo "Format: $ENDUNG"
+
+    EINZELN_START=$(date +%s)
+
+    # WAV-Datei für Whisper vorbereiten
+    # Whisper benötigt 16 kHz, Mono, 16-Bit PCM
+    WAV_DATEI="$TMP_DIR/${BASISNAME}.wav"
+
+    if [ "$ENDUNG" = "wav" ]; then
+        # Auch WAV-Dateien können falsche Parameter haben → immer konvertieren
+        echo "Konvertiere WAV zu 16kHz Mono..."
+    else
+        echo "Konvertiere zu WAV (16kHz Mono)..."
+    fi
+
+    if ! ffmpeg -i "$EINGABE_DATEI" \
+            -ar 16000 \
+            -ac 1 \
+            -c:a pcm_s16le \
+            "$WAV_DATEI" \
+            -y \
+            -loglevel error 2>&1; then
+        echo "FEHLER: Konvertierung fehlgeschlagen für: $DATEINAME"
+        echo "Bitte prüfen Sie, ob die Datei beschädigt oder in einem unbekannten Format ist."
+        FEHLER=$((FEHLER + 1))
+        continue
+    fi
+
+    echo "Transkribiere (bitte warten – large-v3 ist gründlich)..."
+
+    # Ausgabe-Dateipfade
+    AUSGABE_BASIS="$AUSGABE_DIR/$BASISNAME"
+
+    # Whisper aufrufen
+    # --output-txt   → Fließtext ohne Zeitstempel
+    # --output-srt   → Untertiteldatei mit Zeitstempeln
+    # --language     → Deutsch erzwingen (verhindert Sprachdetektions-Fehler)
+    # --model        → Pfad zum large-v3-Modell
+    # --output-file  → Basisname der Ausgabedatei
+    if ! "$WHISPER_BIN" \
+            --model "$MODELL" \
+            --language "$SPRACHE" \
+            --output-txt \
+            --output-srt \
+            --output-file "$AUSGABE_BASIS" \
+            "$WAV_DATEI" \
+            2>/dev/null; then
+        echo "FEHLER: Transkription fehlgeschlagen für: $DATEINAME"
+        echo "Prüfen Sie die Ausgabe mit: whisper-cpp --model $MODELL $WAV_DATEI"
+        FEHLER=$((FEHLER + 1))
+        continue
+    fi
+
+    # Dauer berechnen
+    EINZELN_ENDE=$(date +%s)
+    EINZELN_DAUER=$((EINZELN_ENDE - EINZELN_START))
+    DAUER_TEXT=$(sekunden_formatieren "$EINZELN_DAUER")
+
+    echo ""
+    echo "✓ Fertig in $DAUER_TEXT"
+    echo "  Text:        $AUSGABE_BASIS.txt"
+    echo "  Zeitstempel: $AUSGABE_BASIS.srt"
+
+    VERARBEITET=$((VERARBEITET + 1))
+
+    # Vorschau: Erste 3 Zeilen des Transkripts anzeigen
+    if [ -f "${AUSGABE_BASIS}.txt" ]; then
+        echo ""
+        echo "  Vorschau:"
+        head -3 "${AUSGABE_BASIS}.txt" | sed 's/^/  /'
+        echo "  ..."
+    fi
+
+done
+
+# ---- Zusammenfassung --------------------------------------
+GESAMT_ENDE=$(date +%s)
+GESAMT_DAUER=$((GESAMT_ENDE - GESAMT_START))
+DAUER_GESAMT=$(sekunden_formatieren "$GESAMT_DAUER")
+
+echo ""
+echo "======================================"
+echo "  Abgeschlossen in $DAUER_GESAMT"
+echo "  Erfolgreich: $VERARBEITET von $GESAMT_DATEIEN"
+if [ "$FEHLER" -gt 0 ]; then
+    echo "  Fehler:      $FEHLER"
+fi
+echo "  Alle Dateien: $AUSGABE_DIR/"
+echo "======================================"
+
+# Beendigungscode: 0 wenn alles OK, 1 wenn Fehler aufgetreten
+[ "$FEHLER" -eq 0 ]

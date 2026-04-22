@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# ============================================================
+# zusammenfassen – Transkript per Ollama (qwen2.5:14b) zusammenfassen
+# Verwendung: zusammenfassen transkript.txt
+#             zusammenfassen  (interaktiv: listet Transkripte zur Auswahl)
+# ============================================================
+
+set -euo pipefail
+
+# ---- Konfiguration ----------------------------------------
+TRANSKRIPTE_DIR="$HOME/Transkripte"
+OLLAMA_MODELL="qwen2.5:14b"
+OLLAMA_URL="http://localhost:11434/api/generate"
+
+# ---- Vorprüfungen -----------------------------------------
+if ! command -v ollama &>/dev/null; then
+    echo "FEHLER: Ollama ist nicht installiert oder nicht im PATH."
+    echo "Installieren: https://ollama.com/download"
+    echo "Dann Modell laden: ollama pull qwen2.5:14b"
+    exit 1
+fi
+
+if ! curl -s "$OLLAMA_URL" &>/dev/null; then
+    echo "FEHLER: Ollama läuft nicht."
+    echo "Starten mit: ollama serve"
+    echo "(In einem separaten Terminal-Fenster offen lassen)"
+    exit 1
+fi
+
+# ---- Datei ermitteln --------------------------------------
+if [ $# -eq 0 ]; then
+    # Kein Argument: Transkripte interaktiv auswählen
+    echo "Verfügbare Transkripte in $TRANSKRIPTE_DIR:"
+    echo ""
+
+    # Alle .txt-Dateien auflisten (keine _zusammenfassung-Dateien)
+    TXT_DATEIEN=()
+    while IFS= read -r -d '' f; do
+        TXT_DATEIEN+=("$f")
+    done < <(find "$TRANSKRIPTE_DIR" -maxdepth 1 -name "*.txt" ! -name "*_zusammenfassung*" -print0 | sort -z)
+
+    if [ ${#TXT_DATEIEN[@]} -eq 0 ]; then
+        echo "Keine Transkripte gefunden in $TRANSKRIPTE_DIR"
+        echo "Zuerst eine Datei transkribieren: transkribiere ~/Downloads/aufnahme.mp3"
+        exit 1
+    fi
+
+    for i in "${!TXT_DATEIEN[@]}"; do
+        DATEI="${TXT_DATEIEN[$i]}"
+        GROESSE=$(wc -w < "$DATEI")
+        echo "  [$((i+1))] $(basename "$DATEI")  ($GROESSE Wörter)"
+    done
+
+    echo ""
+    printf "Auswahl (1-%d): " "${#TXT_DATEIEN[@]}"
+    read -r AUSWAHL
+
+    if ! [[ "$AUSWAHL" =~ ^[0-9]+$ ]] || [ "$AUSWAHL" -lt 1 ] || [ "$AUSWAHL" -gt "${#TXT_DATEIEN[@]}" ]; then
+        echo "Ungültige Auswahl."
+        exit 1
+    fi
+
+    EINGABE_DATEI="${TXT_DATEIEN[$((AUSWAHL-1))]}"
+
+elif [ $# -eq 1 ]; then
+    EINGABE_DATEI="$1"
+
+    # Falls nur Dateiname ohne Pfad angegeben
+    if [ ! -f "$EINGABE_DATEI" ] && [ -f "$TRANSKRIPTE_DIR/$EINGABE_DATEI" ]; then
+        EINGABE_DATEI="$TRANSKRIPTE_DIR/$EINGABE_DATEI"
+    fi
+
+    if [ ! -f "$EINGABE_DATEI" ]; then
+        echo "FEHLER: Datei nicht gefunden: $EINGABE_DATEI"
+        exit 1
+    fi
+
+else
+    echo "Verwendung: zusammenfassen [transkript.txt]"
+    echo "Ohne Argument: interaktive Auswahl aus ~/Transkripte/"
+    exit 1
+fi
+
+# ---- Vorbereitung -----------------------------------------
+BASISNAME=$(basename "$EINGABE_DATEI" .txt)
+AUSGABE_DATEI="$TRANSKRIPTE_DIR/${BASISNAME}_zusammenfassung.md"
+TRANSKRIPT_TEXT=$(cat "$EINGABE_DATEI")
+WORTANZAHL=$(wc -w < "$EINGABE_DATEI")
+
+echo "======================================"
+echo "  Zusammenfassung mit $OLLAMA_MODELL"
+echo "======================================"
+echo ""
+echo "Transkript: $(basename "$EINGABE_DATEI")"
+echo "Umfang:     $WORTANZAHL Wörter"
+echo ""
+echo "Analysiere (bitte warten – je nach Länge 1-3 Minuten)..."
+echo ""
+
+START=$(date +%s)
+
+# ---- Prompt zusammenbauen ---------------------------------
+# Hinweis: Der Prompt ist bewusst auf B2B-Büroeinrichtung zugeschnitten
+PROMPT="Erstelle aus folgendem Transkript eine strukturierte Zusammenfassung mit:
+(1) Kernthesen – maximal 5 Punkte
+(2) Wichtigste Zitate mit Zeitstempel, falls vorhanden
+(3) Konkrete Anschlusspunkte für ein B2B-Büroeinrichtungsgeschäft
+
+Stil: Nüchtern, präzise, kein Marketing-Sprech.
+Sprache: Deutsch.
+Format: Markdown.
+
+---TRANSKRIPT---
+$TRANSKRIPT_TEXT
+---ENDE---"
+
+# ---- Ollama API aufrufen ----------------------------------
+# Ausgabe per Streaming in Datei schreiben und gleichzeitig anzeigen
+TEMP_ANTWORT=$(mktemp)
+
+# Ollama Streaming-API: Jede Zeile ist ein JSON-Objekt mit "response"-Feld
+curl -s -N -X POST "$OLLAMA_URL" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -n \
+        --arg model "$OLLAMA_MODELL" \
+        --arg prompt "$PROMPT" \
+        '{model: $model, prompt: $prompt, stream: true}')" \
+    | while IFS= read -r zeile; do
+        # Leere Zeilen überspringen
+        [ -z "$zeile" ] && continue
+        # JSON-Feld "response" extrahieren und ausgeben
+        TEIL=$(echo "$zeile" | jq -r '.response // empty' 2>/dev/null)
+        printf "%s" "$TEIL"
+        printf "%s" "$TEIL" >> "$TEMP_ANTWORT"
+    done
+
+echo ""
+
+# Ergebnis in Markdown-Datei speichern
+{
+    echo "# Zusammenfassung: $BASISNAME"
+    echo ""
+    echo "_Erstellt am $(date '+%d.%m.%Y um %H:%M Uhr') mit $OLLAMA_MODELL_"
+    echo "_Transkript: $EINGABE_DATEI ($WORTANZAHL Wörter)_"
+    echo ""
+    echo "---"
+    echo ""
+    cat "$TEMP_ANTWORT"
+} > "$AUSGABE_DATEI"
+
+rm -f "$TEMP_ANTWORT"
+
+ENDE=$(date +%s)
+DAUER=$((ENDE - START))
+MIN=$((DAUER / 60))
+SEK=$((DAUER % 60))
+
+echo ""
+echo "======================================"
+echo "✓ Zusammenfassung gespeichert:"
+echo "  $AUSGABE_DATEI"
+printf "  Dauer: %dm %02ds\n" "$MIN" "$SEK"
+echo "======================================"
+
+# Datei in Standard-Markdown-Viewer öffnen (macOS)
+if command -v open &>/dev/null; then
+    open "$AUSGABE_DATEI"
+fi
