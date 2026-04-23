@@ -16,8 +16,13 @@ mkdir -p "$APP_PATH/Contents/MacOS"
 
 cat > "$APP_PATH/Contents/MacOS/start" <<APPEOF
 #!/bin/zsh
-"$VENV_DIR/bin/open-webui" serve >>/tmp/open-webui.log 2>&1 &
-sleep 4
+pgrep -f "open-webui serve" &>/dev/null || \
+  "$VENV_DIR/bin/open-webui" serve >>/tmp/open-webui.log 2>&1 &
+
+for i in {1..30}; do
+  curl -s http://127.0.0.1:8080 &>/dev/null && break
+  sleep 2
+done
 open http://127.0.0.1:8080
 APPEOF
 chmod +x "$APP_PATH/Contents/MacOS/start"

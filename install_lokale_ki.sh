@@ -147,7 +147,7 @@ add_alias() {
 grep -q "# Lokale KI" "$ZPROFILE" 2>/dev/null || \
   echo "\n# Lokale KI" >> "$ZPROFILE"
 
-add_alias ki-start  "source $VENV_DIR/bin/activate && open-webui serve &>/tmp/open-webui.log & sleep 3 && open http://127.0.0.1:8080"
+add_alias ki-start  "pgrep -f 'open-webui serve' &>/dev/null || ($VENV_DIR/bin/open-webui serve >>/tmp/open-webui.log 2>&1 &); for i in {1..30}; do curl -s http://127.0.0.1:8080 &>/dev/null && break; sleep 2; done; open http://127.0.0.1:8080"
 add_alias ki-stop   "pkill -f 'open-webui serve' 2>/dev/null; echo 'Open WebUI gestoppt'"
 add_alias ki-status "echo '=== Ollama ==='; curl -s http://127.0.0.1:11434 && echo OK || echo NICHT ERREICHBAR; echo '=== Open WebUI ==='; pgrep -f 'open-webui serve' &>/dev/null && echo 'LÄUFT' || echo 'GESTOPPT'"
 add_alias ki-modelle "ollama list"
@@ -165,8 +165,15 @@ mkdir -p "$APP_PATH/Contents/MacOS"
 # funktioniert auch wenn Finder die App ohne Login-Shell startet.
 cat > "$APP_PATH/Contents/MacOS/start" <<APPEOF
 #!/bin/zsh
-"$VENV_DIR/bin/open-webui" serve >>/tmp/open-webui.log 2>&1 &
-sleep 4
+# Nichts tun wenn Open WebUI bereits läuft
+pgrep -f "open-webui serve" &>/dev/null || \
+  "$VENV_DIR/bin/open-webui" serve >>/tmp/open-webui.log 2>&1 &
+
+# Warten bis Server antwortet (max. 60 Sek.)
+for i in {1..30}; do
+  curl -s http://127.0.0.1:8080 &>/dev/null && break
+  sleep 2
+done
 open http://127.0.0.1:8080
 APPEOF
 chmod +x "$APP_PATH/Contents/MacOS/start"
