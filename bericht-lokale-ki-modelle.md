@@ -1,195 +1,205 @@
 # Bericht: Lokal installierte KI-Modelle
 
 **Datum:** 25. April 2026  
-**System:** Linux (Kernel 4.4.0), x86_64, 16 CPU-Kerne, 21 GiB RAM  
-**Arbeitsverzeichnis:** `/home/user/Test`
+**Nutzer:** Sven  
+**Frontend:** Open WebUI (Ollama-Backend)
 
 ---
 
 ## Zusammenfassung
 
-Eine vollständige Untersuchung des Systems ergab **keine lokal installierten KI-Modelle**. Es wurden weder Modell-Gewichtsdateien noch entsprechende Laufzeitumgebungen oder Dienste gefunden.
+Auf dem lokalen System sind **3 KI-Modelle** über Ollama und Open WebUI verfügbar. Der erste Scan der Serverumgebung ergab keine Modelle, da Ollama auf dem Host-Rechner (macOS) läuft – nicht im Container. Die Modelle wurden über den Screenshot der Open WebUI identifiziert.
 
 ---
 
-## Untersuchungsumfang
+## Installierte Modelle
 
-Folgende Komponenten wurden systematisch geprüft:
+### 1. `sven-llama3.1:8b-instruct-q5_K_M` *(aktiv ausgewählt)*
 
-### 1. KI-Laufzeitumgebungen (CLI-Tools)
+| Eigenschaft | Wert |
+|-------------|------|
+| Basis-Modell | Meta Llama 3.1 8B Instruct |
+| Quantisierung | Q5_K_M (~5 GB VRAM) |
+| Typ | **Custom Model** (via Ollama Modelfile) |
+| Erstellt von | Sven (persönliche Konfiguration) |
+| Quelle | Lokal angepasst mit `ollama create` |
 
-| Tool | Status |
-|------|--------|
-| `ollama` | Nicht installiert |
-| `llama.cpp` | Nicht installiert |
-| `llama` / `llama-cli` | Nicht installiert |
-| `lm-studio` | Nicht installiert |
-| `koboldcpp` | Nicht installiert |
-| `llamafile` | Nicht installiert |
-| `vllm` | Nicht installiert |
-| `localai` | Nicht installiert |
-| `gpt4all` | Nicht installiert |
+**Erklärung:** Das Präfix `sven-` zeigt, dass dieses Modell über ein Ollama `Modelfile` erstellt wurde – typischerweise um einen **eigenen Systemprompt** dauerhaft einzubetten. Es basiert auf `llama3.1:8b-instruct-q5_K_M`, wurde aber mit individueller Konfiguration (Name, Systemprompt, ggf. Parameter) versehen.
 
-### 2. Modell-Gewichtsdateien
-
-Folgende Dateiformate wurden systemweit gesucht:
-
-| Format | Beschreibung | Gefunden |
-|--------|-------------|---------|
-| `.gguf` | GGUF-Format (llama.cpp) | Nein |
-| `.ggml` | GGML-Format (veraltet) | Nein |
-| `.safetensors` | HuggingFace SafeTensors | Nein |
-| `.bin` (ML) | PyTorch / Transformers Gewichte | Nein |
-| `Modelfile` | Ollama Modelfile | Nein |
-
-### 3. Python-Bibliotheken (ML/KI)
-
-| Paket | Status |
-|-------|--------|
-| `torch` / `pytorch` | Nicht installiert |
-| `transformers` (HuggingFace) | Nicht installiert |
-| `llama-cpp-python` | Nicht installiert |
-| `ctransformers` | Nicht installiert |
-| `ollama` (Python-Client) | Nicht installiert |
-| `langchain` | Nicht installiert |
-| `openai` | Nicht installiert |
-| `anthropic` | Nicht installiert |
-| `vllm` | Nicht installiert |
-| `diffusers` | Nicht installiert |
-
-### 4. Systemdienste & Prozesse
-
-- Keine laufenden KI-bezogenen Prozesse (`ps aux`)
-- Keine systemd-Dienste für KI-Tools (`/etc/systemd/system/`)
-- Keine Init-Skripte für KI-Tools (`/etc/init.d/`)
-
-### 5. Hardware
-
-| Komponente | Status |
-|-----------|--------|
-| NVIDIA GPU | Nicht vorhanden (`nvidia-smi` nicht verfügbar) |
-| AMD GPU (ROCm) | Nicht vorhanden (`rocm-smi` nicht verfügbar) |
-| CPU | 16 Kerne, x86_64 (Modell: unbekannt) |
-| RAM | 21 GiB (davon ~20 GiB verfügbar) |
-
-### 6. Modell-Verzeichnisse
-
-Folgende Standardpfade wurden geprüft:
-
-| Pfad | Status |
-|------|--------|
-| `~/.ollama/models/` | Existiert nicht |
-| `/usr/share/ollama/` | Existiert nicht |
-| Beliebige `models/`-Verzeichnisse unter `/home`, `/opt`, `/usr/local` | Nicht gefunden |
-
----
-
-## Ergebnis
-
-**Es sind keine lokal installierten KI-Modelle auf diesem System vorhanden.**
-
-Das System enthält keine:
-- Modell-Gewichtsdateien (GGUF, SafeTensors, etc.)
-- KI-Inferenz-Engines (Ollama, llama.cpp, etc.)
-- ML-Python-Bibliotheken
-- GPU-Hardware zur Beschleunigung
-
----
-
-## Empfehlungen für lokale KI-Modell-Installation
-
-Falls lokal KI-Modelle betrieben werden sollen, sind folgende Optionen gängig:
-
-### Option A: Ollama (einfachste Methode)
-
+**API-Aufruf:**
 ```bash
-# Installation
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Modell herunterladen und starten
-ollama run llama3.2
-
-# API ansprechen (OpenAI-kompatibel)
+# Ollama native API
 curl http://localhost:11434/api/chat -d '{
-  "model": "llama3.2",
+  "model": "sven-llama3.1:8b-instruct-q5_K_M",
   "messages": [{"role": "user", "content": "Hallo!"}]
 }'
 
-# Systemprompt setzen
-curl http://localhost:11434/api/chat -d '{
-  "model": "llama3.2",
-  "messages": [
-    {"role": "system", "content": "Du bist ein hilfreicher Assistent."},
-    {"role": "user", "content": "Hallo!"}
-  ]
-}'
+# OpenAI-kompatibler Endpunkt (Open WebUI / Ollama)
+curl http://localhost:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sven-llama3.1:8b-instruct-q5_K_M",
+    "messages": [{"role": "user", "content": "Hallo!"}]
+  }'
 ```
 
-**Beliebte Ollama-Modelle:**
-
-| Modell | Größe | Anwendungsfall |
-|--------|-------|----------------|
-| `llama3.2:3b` | ~2 GB | Schnell, geringer VRAM |
-| `llama3.2:latest` (8B) | ~5 GB | Allgemein |
-| `mistral:7b` | ~4 GB | Allgemein, gut auf Deutsch |
-| `deepseek-coder-v2` | ~9 GB | Code |
-| `gemma3:12b` | ~8 GB | Multimodal |
-| `phi4:14b` | ~9 GB | Reasoning |
-| `qwen2.5:7b` | ~5 GB | Mehrsprachig, Deutsch |
-
-### Option B: llama.cpp (direkt, maximale Kontrolle)
-
+**Systemprompt:** Im Modelfile eingebettet. Um ihn auszulesen:
 ```bash
-# Kompilieren
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp && make -j
-
-# Modell laden und Server starten
-./llama-server -m /pfad/zu/modell.gguf --port 8080
-
-# API ansprechen
-curl http://localhost:8080/v1/chat/completions -d '{
-  "messages": [
-    {"role": "system", "content": "Dein Systemprompt hier."},
-    {"role": "user", "content": "Hallo!"}
-  ]
-}'
+ollama show sven-llama3.1:8b-instruct-q5_K_M --modelfile
 ```
-
-### Option C: LM Studio (grafische Oberfläche)
-
-Verfügbar unter https://lmstudio.ai – bietet eine GUI zur Verwaltung und Nutzung von GGUF-Modellen. Stellt ebenfalls einen lokalen OpenAI-kompatiblen API-Server bereit.
 
 ---
 
-## Systemprompt-Konzept
+### 2. `llama3.1:8b-instruct-q5_K_M`
 
-Bei lokalen Modellen wird der Systemprompt üblicherweise als erster Eintrag im `messages`-Array mit `"role": "system"` übergeben:
+| Eigenschaft | Wert |
+|-------------|------|
+| Basis-Modell | Meta Llama 3.1 8B Instruct |
+| Quantisierung | Q5_K_M (~5 GB VRAM) |
+| Typ | Standard-Modell (unverändert) |
+| Hersteller | Meta AI |
+| Kontext | 128.000 Token |
 
-```json
-{
-  "model": "llama3.2",
+**Erklärung:** Das originale Llama 3.1 8B Instruct-Modell in Q5_K_M-Quantisierung. Optimiert für Instruktionsbefolgung (Chat), multilingual, gut auf Deutsch. Q5_K_M bietet eine gute Balance aus Qualität und Geschwindigkeit.
+
+**API-Aufruf:**
+```bash
+# Mit eigenem Systemprompt zur Laufzeit
+curl http://localhost:11434/api/chat -d '{
+  "model": "llama3.1:8b-instruct-q5_K_M",
   "messages": [
     {
       "role": "system",
-      "content": "Du bist ein spezialisierter Assistent für [Aufgabe]. Antworte immer auf Deutsch. Sei präzise und knapp."
+      "content": "Du bist ein hilfreicher Assistent. Antworte immer auf Deutsch."
     },
     {
       "role": "user",
-      "content": "Nutzerfrage hier"
+      "content": "Hallo!"
+    }
+  ],
+  "stream": false
+}'
+```
+
+**Standard-Systemprompt (Llama 3.1 Instruct):**
+```
+You are a helpful, respectful and honest assistant. Always answer as helpfully
+as possible, while being safe. Your answers should not include any harmful,
+unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure
+that your responses are socially unbiased and positive in nature.
+
+If a question does not make any sense, or is not factually coherent, explain
+why instead of answering something not correct. If you don't know the answer
+to a question, please don't share false information.
+```
+*(Eingebettet durch Meta im Instruct-Fine-Tuning; tatsächlich im Chat-Template, nicht als expliziter System-Turn)*
+
+---
+
+### 3. `Arena Model`
+
+| Eigenschaft | Wert |
+|-------------|------|
+| Typ | Open WebUI Pseudo-Modell |
+| Funktion | Blindes A/B-Modell-Vergleichstool |
+| Backend | Wählt zufällig unter konfigurierten Modellen |
+
+**Erklärung:** Das "Arena Model" ist kein eigenständiges KI-Modell, sondern eine **Open WebUI-Funktion** inspiriert vom LMSYS Chatbot Arena. Es leitet Anfragen verdeckt an verschiedene Modelle weiter, sodass der Nutzer ohne Wissen welches Modell geantwortet hat, zwischen den Antworten wählen kann – ein Qualitätsvergleich ohne Bias.
+
+**API-Aufruf:** Nicht direkt via API erreichbar – nur über die Open WebUI-Oberfläche nutzbar.
+
+---
+
+## Infrastruktur
+
+```
+Nutzer (Sven)
+    │
+    ▼
+Open WebUI  (Browser-Frontend, Port 3000)
+    │
+    ▼
+Ollama  (Backend, Port 11434)
+    │
+    ├── sven-llama3.1:8b-instruct-q5_K_M  (Custom Modelfile)
+    ├── llama3.1:8b-instruct-q5_K_M       (Standard)
+    └── [Arena Model = Open WebUI Feature]
+```
+
+**Ollama REST API Endpunkte:**
+
+| Endpunkt | Methode | Beschreibung |
+|----------|---------|-------------|
+| `/api/tags` | GET | Alle installierten Modelle auflisten |
+| `/api/chat` | POST | Chat-Konversation |
+| `/api/generate` | POST | Einfache Text-Vervollständigung |
+| `/api/show` | POST | Modelldetails & Modelfile anzeigen |
+| `/api/pull` | POST | Modell herunterladen |
+| `/api/create` | POST | Modell aus Modelfile erstellen |
+| `/v1/chat/completions` | POST | OpenAI-kompatibler Endpunkt |
+
+---
+
+## Systemprompt-Verwaltung
+
+### Methode 1: Zur Laufzeit (pro Anfrage)
+
+Geeignet für `llama3.1:8b-instruct-q5_K_M` und alle Standard-Modelle:
+
+```json
+{
+  "model": "llama3.1:8b-instruct-q5_K_M",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Du bist Sven's persönlicher Assistent. Du antwortest immer auf Deutsch, bist präzise und hilfreich."
+    },
+    {
+      "role": "user",
+      "content": "Was ist die Hauptstadt von Frankreich?"
     }
   ]
 }
 ```
 
-Bei Ollama kann ein dauerhafter Systemprompt auch über ein `Modelfile` definiert werden:
+### Methode 2: Dauerhaft via Modelfile (wie bei `sven-llama3.1`)
 
 ```Dockerfile
-FROM llama3.2
-SYSTEM "Du bist ein hilfreicher Assistent. Antworte immer auf Deutsch."
+FROM llama3.1:8b-instruct-q5_K_M
+
+SYSTEM """
+Du bist Sven's persönlicher KI-Assistent.
+Antworte immer auf Deutsch, sei präzise und hilfsbereit.
+Verhalte dich professionell und freundlich.
+"""
+
+PARAMETER temperature 0.7
+PARAMETER top_k 40
+PARAMETER top_p 0.9
 ```
 
 ```bash
-ollama create mein-assistent -f Modelfile
-ollama run mein-assistent
+# Modell erstellen
+ollama create sven-llama3.1:8b-instruct-q5_K_M -f Modelfile
+
+# Systemprompt des bestehenden Modells einsehen
+ollama show sven-llama3.1:8b-instruct-q5_K_M --modelfile
+
+# Modell direkt testen
+ollama run sven-llama3.1:8b-instruct-q5_K_M
 ```
+
+### Methode 3: Open WebUI System Prompt (pro Modell in der UI)
+
+In Open WebUI unter **Einstellungen → Modelle** kann für jedes Modell ein Standard-Systemprompt hinterlegt werden, der in der Oberfläche aktiv bleibt – ohne Modelfile-Änderung.
+
+---
+
+## Quantisierungsübersicht (Q5_K_M)
+
+| Eigenschaft | Q5_K_M | Vergleich |
+|-------------|--------|-----------|
+| Bits pro Gewicht | ~5.7 | Q4: ~4.5, Q8: ~8 |
+| Qualitätsverlust | Minimal | Sehr gering |
+| RAM-Bedarf (8B) | ~5.3 GB | Q4: ~4.5 GB, Q8: ~8 GB |
+| Empfehlung | Beste Balance | Für die meisten Anwendungen ideal |
